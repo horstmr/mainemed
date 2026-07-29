@@ -120,16 +120,21 @@
     </div>
     <div class="botoes">
       <button id="btnGravar" class="gravar">● Ditar consulta</button>
-      <button id="btnDoc">📄 Importar documento (OCR)</button>
+      <button id="btnDoc">📄 Importar documento (IA)</button>
+      <button id="btnOcrLocal">🧪 OCR local (experimental)</button>
       <span class="status" id="stGravacao"></span>
     </div>
     <input type="file" id="arqDoc" accept="image/*,application/pdf,.pdf" multiple hidden>
+    <input type="file" id="arqOcrLocal" accept="image/*" multiple hidden>
     <p class="nota" id="semVoz" hidden>Este navegador não oferece ditado por voz
       (use Chrome, Edge ou Safari). Os exemplos e a digitação continuam funcionando.</p>
     <p class="nota">Importar documento lê foto ou PDF de exames, encaminhamentos e fichas
-      antigas e coloca o texto na transcrição. No <em>modo real</em> o arquivo é enviado à
-      API para leitura; no <em>modo demonstração</em> nada sai do navegador (entra um
-      exemplo fictício).</p>
+      antigas e coloca o texto na transcrição. No <em>modo IA</em> o arquivo é enviado à
+      API para leitura (requer chave); no <em>modo demonstração</em> nada sai do navegador
+      (entra um exemplo fictício). Já o <em>OCR local</em> (Tesseract) processa a imagem
+      <strong>dentro do navegador</strong> — a foto não sai da máquina e não precisa de
+      chave, mas baixa o motor (~15 MB) do CDN na primeira vez, lê só imagens (não PDF) e
+      erra mais que o modo IA.</p>
     <label for="transcricao" style="display:block;margin-top:12px">Transcrição (editável)</label>
     <textarea id="transcricao" placeholder="O texto ditado aparece aqui — ou digite/cole a transcrição."></textarea>
     <div class="status"><span id="interim" class="interim"></span></div>
@@ -559,6 +564,65 @@ $("arqDoc").onchange = async () => {
     $("stGravacao").textContent = erro.message;
   } finally {
     $("btnDoc").disabled = false; $("btnGerar").disabled = false;
+  }
+};
+
+/* ------------------- OCR local no navegador (Tesseract) ------------------- */
+// Carregado sob demanda do CDN para a página continuar leve; a imagem em si
+// nunca sai do navegador — só o motor é baixado.
+let tesseractCarregando = null;
+function carregarTesseract() {
+  if (window.Tesseract) return Promise.resolve();
+  if (tesseractCarregando) return tesseractCarregando;
+  tesseractCarregando = new Promise((res, rej) => {
+    const script = document.createElement("script");
+    script.src = "https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js";
+    script.onload = () => res();
+    script.onerror = () => {
+      tesseractCarregando = null;
+      rej(new Error("Não deu para baixar o motor de OCR local — precisa de internet na primeira utilização."));
+    };
+    document.head.appendChild(script);
+  });
+  return tesseractCarregando;
+}
+
+$("btnOcrLocal").onclick = () => $("arqOcrLocal").click();
+$("arqOcrLocal").onchange = async () => {
+  const arquivos = Array.from($("arqOcrLocal").files || []);
+  $("arqOcrLocal").value = "";
+  if (!arquivos.length) return;
+  if (arquivos.some(a => a.type === "application/pdf" || /\.pdf$/i.test(a.name))) {
+    $("stGravacao").textContent =
+      "O OCR local lê apenas fotos/imagens — para PDF, use Importar documento (IA).";
+    return;
+  }
+  const area = $("transcricao");
+  $("btnOcrLocal").disabled = true; $("btnDoc").disabled = true; $("btnGerar").disabled = true;
+  try {
+    $("stGravacao").textContent =
+      "Preparando o OCR local (na primeira vez baixa ~15 MB; depois fica em cache)…";
+    await carregarTesseract();
+    for (const arquivo of arquivos) {
+      const imagem = "data:image/jpeg;base64," + await imagemParaJpeg(arquivo);
+      const resultado = await Tesseract.recognize(imagem, "por", {
+        logger: m => {
+          if (m.status === "recognizing text")
+            $("stGravacao").textContent =
+              `OCR local: lendo ${arquivo.name}… ${Math.round(m.progress * 100)}%`;
+        }
+      });
+      const texto = (resultado.data.text || "").trim();
+      area.value += (area.value.trim() ? "\n\n" : "") +
+        `[DOCUMENTO IMPORTADO — OCR local (Tesseract) — ${arquivo.name}]\n` +
+        (texto || "[nada reconhecido — tente foto mais nítida, de frente e bem iluminada]");
+    }
+    $("stGravacao").textContent =
+      "OCR local concluído. Experimental: revise com atenção — ele erra mais que o modo IA.";
+  } catch (erro) {
+    $("stGravacao").textContent = erro.message;
+  } finally {
+    $("btnOcrLocal").disabled = false; $("btnDoc").disabled = false; $("btnGerar").disabled = false;
   }
 };
 

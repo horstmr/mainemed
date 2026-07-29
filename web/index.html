@@ -120,10 +120,16 @@
     </div>
     <div class="botoes">
       <button id="btnGravar" class="gravar">● Ditar consulta</button>
+      <button id="btnDoc">📄 Importar documento (OCR)</button>
       <span class="status" id="stGravacao"></span>
     </div>
+    <input type="file" id="arqDoc" accept="image/*,application/pdf,.pdf" multiple hidden>
     <p class="nota" id="semVoz" hidden>Este navegador não oferece ditado por voz
       (use Chrome, Edge ou Safari). Os exemplos e a digitação continuam funcionando.</p>
+    <p class="nota">Importar documento lê foto ou PDF de exames, encaminhamentos e fichas
+      antigas e coloca o texto na transcrição. No <em>modo real</em> o arquivo é enviado à
+      API para leitura; no <em>modo demonstração</em> nada sai do navegador (entra um
+      exemplo fictício).</p>
     <label for="transcricao" style="display:block;margin-top:12px">Transcrição (editável)</label>
     <textarea id="transcricao" placeholder="O texto ditado aparece aqui — ou digite/cole a transcrição."></textarea>
     <div class="status"><span id="interim" class="interim"></span></div>
@@ -416,15 +422,9 @@ ORIENTAÇÕES E RETORNO
 [demonstração]`;
 }
 
-async function gerarReal(chave, modelo, transcricao) {
+async function chamarAPI(chave, corpo) {
   // Chamada direta do navegador (CORS liberado pelo cabeçalho abaixo);
   // página estática sem build não comporta o SDK npm.
-  const corpo = {
-    model: modelo,
-    max_tokens: 16000,
-    system: SISTEMA,
-    messages: [{ role: "user", content: "Transcrição da consulta:\n\n" + transcricao }]
-  };
   const base = {
     "content-type": "application/json",
     "x-api-key": chave,
@@ -447,17 +447,120 @@ async function gerarReal(chave, modelo, transcricao) {
     try { msg = (await resp.json()).error?.message || msg; } catch (e) {}
     if (resp.status === 401) throw new Error("Chave inválida ou revogada. Confira em Configurações.");
     if (resp.status === 429) throw new Error("Muitas solicitações agora. Aguarde um minuto e tente de novo.");
-    throw new Error("Falha na geração: " + msg);
+    throw new Error("Falha na chamada: " + msg);
   }
   const dados = await resp.json();
   if (dados.stop_reason === "refusal")
-    throw new Error("O serviço recusou gerar este texto. Revise a transcrição.");
+    throw new Error("O serviço recusou processar este conteúdo.");
   const texto = (dados.content || [])
     .filter(b => b.type === "text").map(b => b.text).join("").trim();
   if (!texto) throw new Error("Resposta vazia do serviço. Tente novamente.");
   return texto + (dados.stop_reason === "max_tokens"
     ? "\n\n[Atenção: o texto pode ter sido cortado.]" : "");
 }
+
+async function gerarReal(chave, modelo, transcricao) {
+  return chamarAPI(chave, {
+    model: modelo,
+    max_tokens: 16000,
+    system: SISTEMA,
+    messages: [{ role: "user", content: "Transcrição da consulta:\n\n" + transcricao }]
+  });
+}
+
+/* --------------------------- importar documento -------------------------- */
+const OCR_SISTEMA = `Você transcreve documentos médicos digitalizados (exames laboratoriais, laudos, encaminhamentos, receitas, fichas).
+- Transcreva fielmente todo o texto legível, preservando títulos, campos, valores e unidades, em texto simples.
+- Identifique o tipo de documento na primeira linha (ex.: "Exame laboratorial — Laboratório X, 12/05/2026").
+- Use [ilegível] quando não conseguir ler um trecho. Nunca invente valores.
+- Não acrescente interpretação clínica; apenas o conteúdo do documento.`;
+
+const OCR_DEMO = `[DOCUMENTO IMPORTADO — demonstração local, sem IA]
+Exame laboratorial — Laboratório Vida (fictício), 21/07/2026
+Paciente: exemplo (dados fictícios)
+Hemoglobina: 10,9 g/dL (VR 12,0–16,0) · Hematócrito: 33% (VR 36–46)
+Ferritina: 9 ng/mL (VR 13–150) · TSH: 2,1 µUI/mL (VR 0,4–4,0)
+Glicemia de jejum: 89 mg/dL (VR 70–99)
+[Para ler seus documentos de verdade, informe a chave em Configurações.]`;
+
+function lerBase64(arquivo) {
+  return new Promise((res, rej) => {
+    const leitor = new FileReader();
+    leitor.onload = () => res(String(leitor.result).split(",")[1]);
+    leitor.onerror = () => rej(new Error("Falha ao ler o arquivo."));
+    leitor.readAsDataURL(arquivo);
+  });
+}
+
+async function imagemParaJpeg(arquivo) {
+  const url = URL.createObjectURL(arquivo);
+  try {
+    const img = await new Promise((res, rej) => {
+      const i = new Image();
+      i.onload = () => res(i);
+      i.onerror = () => rej(new Error(
+        `Não consegui abrir "${arquivo.name}" neste navegador (ex.: HEIC no Chrome). ` +
+        "Converta para JPG/PNG ou envie em PDF."));
+      i.src = url;
+    });
+    const escala = Math.min(1, 2500 / Math.max(img.naturalWidth, img.naturalHeight));
+    const tela = document.createElement("canvas");
+    tela.width = Math.max(1, Math.round(img.naturalWidth * escala));
+    tela.height = Math.max(1, Math.round(img.naturalHeight * escala));
+    tela.getContext("2d").drawImage(img, 0, 0, tela.width, tela.height);
+    return tela.toDataURL("image/jpeg", 0.85).split(",")[1];
+  } finally { URL.revokeObjectURL(url); }
+}
+
+async function arquivoParaBloco(arquivo) {
+  if (arquivo.type === "application/pdf" || /\.pdf$/i.test(arquivo.name)) {
+    return { type: "document", source: {
+      type: "base64", media_type: "application/pdf", data: await lerBase64(arquivo) } };
+  }
+  return { type: "image", source: {
+    type: "base64", media_type: "image/jpeg", data: await imagemParaJpeg(arquivo) } };
+}
+
+$("btnDoc").onclick = () => $("arqDoc").click();
+$("arqDoc").onchange = async () => {
+  const arquivos = Array.from($("arqDoc").files || []);
+  $("arqDoc").value = "";
+  if (!arquivos.length) return;
+  const area = $("transcricao");
+  const chave = $("chave").value.trim();
+  if (!chave) {
+    area.value += (area.value.trim() ? "\n\n" : "") + OCR_DEMO;
+    $("stGravacao").textContent =
+      "Modo demonstração: entrou um documento fictício. Com a chave, eu leio os seus.";
+    return;
+  }
+  if (arquivos.reduce((s, a) => s + a.size, 0) > 20 * 1024 * 1024) {
+    $("stGravacao").textContent = "Arquivos somam mais de 20 MB — envie menos páginas por vez.";
+    return;
+  }
+  $("btnDoc").disabled = true; $("btnGerar").disabled = true;
+  $("stGravacao").textContent = "Lendo documento com IA… (alguns segundos)";
+  try {
+    const blocos = [];
+    for (const arquivo of arquivos) blocos.push(await arquivoParaBloco(arquivo));
+    blocos.push({ type: "text", text: "Transcreva o(s) documento(s) acima." });
+    const texto = await chamarAPI(chave, {
+      model: $("modelo").value,
+      max_tokens: 16000,
+      system: OCR_SISTEMA,
+      messages: [{ role: "user", content: blocos }]
+    });
+    const nomes = arquivos.map(a => a.name).join(", ");
+    area.value += (area.value.trim() ? "\n\n" : "") +
+      `[DOCUMENTO IMPORTADO — ${nomes}]\n` + texto;
+    $("stGravacao").textContent =
+      "Documento lido e adicionado à transcrição. Revise antes de gerar o prontuário.";
+  } catch (erro) {
+    $("stGravacao").textContent = erro.message;
+  } finally {
+    $("btnDoc").disabled = false; $("btnGerar").disabled = false;
+  }
+};
 
 $("btnGerar").onclick = async () => {
   const transcricao = $("transcricao").value.trim();

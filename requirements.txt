@@ -1,0 +1,6 @@
+mlx-whisper>=0.4.2
+sounddevice>=0.4.6
+numpy
+anthropic>=0.40
+python-docx>=1.1
+reportlab>=4.0

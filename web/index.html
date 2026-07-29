@@ -1,0 +1,377 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MaineMed Web — demonstração</title>
+<style>
+  :root{
+    --tinta:#1c2b33; --fundo:#f6f8f9; --painel:#ffffff; --borda:#d7e0e4;
+    --acento:#0e7490; --acento-2:#155e75; --alerta:#b3261e; --ok:#1b5e20;
+    --suave:#5b7078;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font:15px/1.55 -apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+       color:var(--tinta);background:var(--fundo)}
+  header{background:var(--acento-2);color:#fff;padding:14px 20px;display:flex;
+         align-items:baseline;gap:12px;flex-wrap:wrap}
+  header h1{margin:0;font-size:22px;letter-spacing:.3px}
+  .selo{background:#fff;color:var(--acento-2);border-radius:999px;padding:2px 10px;
+        font-size:12px;font-weight:700}
+  header small{opacity:.85}
+  main{max-width:980px;margin:0 auto;padding:16px 16px 48px}
+  .aviso{background:#fff8e1;border:1px solid #e6d9a8;border-radius:10px;
+         padding:10px 14px;margin:14px 0;font-size:14px}
+  section{background:var(--painel);border:1px solid var(--borda);border-radius:12px;
+          padding:16px;margin:14px 0}
+  section h2{margin:0 0 10px;font-size:16px;color:var(--acento-2)}
+  label{font-weight:600;font-size:13px}
+  input[type=text],input[type=password],select,textarea{
+    width:100%;padding:8px 10px;border:1px solid var(--borda);border-radius:8px;
+    font:inherit;background:#fff;color:inherit}
+  textarea{min-height:150px;resize:vertical}
+  .linha{display:flex;gap:10px;flex-wrap:wrap;align-items:end}
+  .linha>div{flex:1;min-width:180px}
+  button{font:inherit;border:0;border-radius:9px;padding:9px 16px;cursor:pointer;
+         background:#e4ecef;color:var(--tinta)}
+  button:hover{filter:brightness(.96)}
+  button:disabled{opacity:.5;cursor:not-allowed}
+  button.principal{background:var(--acento);color:#fff;font-weight:700}
+  button.gravar{background:var(--alerta);color:#fff;font-weight:700;font-size:16px;
+                padding:12px 22px}
+  button.gravar.ativo{background:var(--ok)}
+  .botoes{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+  .status{font-size:13px;color:var(--suave);margin-top:8px;min-height:1.2em}
+  .interim{color:var(--suave);font-style:italic}
+  .modo{display:inline-block;border-radius:999px;padding:2px 10px;font-size:12px;
+        font-weight:700;background:#eceff1;color:var(--suave)}
+  .modo.real{background:#e0f2f1;color:var(--acento-2)}
+  details{margin-top:8px}
+  summary{cursor:pointer;font-weight:600;color:var(--acento-2)}
+  .nota{font-size:12.5px;color:var(--suave);margin-top:6px}
+  footer{max-width:980px;margin:0 auto;padding:0 16px 30px;font-size:12.5px;
+         color:var(--suave)}
+  @media print{
+    header,.aviso,#entrada,#config,.botoes,.status,footer,#modoSelo{display:none!important}
+    body{background:#fff}
+    section{border:0;padding:0;margin:0}
+    textarea#saida{border:0;min-height:0;height:auto;font-size:13px}
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>MaineMed</h1><span class="selo">Web · MVP</span>
+  <small>documentação de consultas — demonstração sem login</small>
+</header>
+<main>
+  <div class="aviso">
+    <strong>Demonstração.</strong> Nada é enviado a servidor próprio: tudo roda neste
+    navegador. O ditado usa o serviço de voz do navegador (Chrome/Edge/Safari) e o
+    prontuário sai em <em>modo demonstração</em> (gerado localmente, sem IA) — a menos
+    que você informe uma chave de API nas configurações. O aplicativo para Mac é a
+    versão completa, com transcrição 100% local.
+  </div>
+
+  <section id="entrada">
+    <h2>1 · Consulta</h2>
+    <div class="linha">
+      <div><label for="nome">Paciente</label>
+        <input type="text" id="nome" placeholder="Nome do paciente"></div>
+      <div><label for="exemplo">Ou carregue uma consulta de exemplo (dados fictícios)</label>
+        <select id="exemplo"><option value="">— escolher exemplo —</option></select></div>
+    </div>
+    <div class="botoes">
+      <button id="btnGravar" class="gravar">● Ditar consulta</button>
+      <span class="status" id="stGravacao"></span>
+    </div>
+    <p class="nota" id="semVoz" hidden>Este navegador não oferece ditado por voz
+      (use Chrome, Edge ou Safari). Os exemplos e a digitação continuam funcionando.</p>
+    <label for="transcricao" style="display:block;margin-top:12px">Transcrição (editável)</label>
+    <textarea id="transcricao" placeholder="O texto ditado aparece aqui — ou digite/cole a transcrição."></textarea>
+    <div class="status"><span id="interim" class="interim"></span></div>
+  </section>
+
+  <section>
+    <h2>2 · Prontuário <span class="modo" id="modoSelo">demonstração</span></h2>
+    <div class="botoes">
+      <button id="btnGerar" class="principal">Gerar prontuário</button>
+      <button id="btnCopiar">Copiar</button>
+      <button id="btnTxt">Baixar .txt</button>
+      <button id="btnPdf">Imprimir / PDF</button>
+    </div>
+    <div class="status" id="stGerar"></div>
+    <label for="saida" style="display:block;margin-top:12px">Texto (editável)</label>
+    <textarea id="saida" style="min-height:260px"></textarea>
+  </section>
+
+  <section id="config">
+    <details>
+      <summary>⚙ Configurações — modo real (opcional)</summary>
+      <div class="linha" style="margin-top:10px">
+        <div><label for="chave">Chave da API (Anthropic)</label>
+          <input type="password" id="chave" placeholder="sk-ant-…" autocomplete="off"></div>
+        <div><label for="modelo">Modelo</label>
+          <select id="modelo">
+            <option value="claude-opus-5">claude-opus-5 (recomendado)</option>
+            <option value="claude-sonnet-5">claude-sonnet-5 (mais barato)</option>
+          </select></div>
+      </div>
+      <label style="font-weight:400;font-size:13px;display:block;margin-top:8px">
+        <input type="checkbox" id="lembrar"> lembrar a chave neste navegador
+      </label>
+      <p class="nota">A chave fica somente neste navegador e é usada apenas na chamada
+        de geração do prontuário. Recomendação para emprestar uma chave: crie no
+        Console um <em>workspace</em> separado com limite de gasto mensal e gere a
+        chave nele — dá para revogar a qualquer momento.</p>
+    </details>
+  </section>
+</main>
+<footer>
+  MaineMed Web é um MVP de demonstração com dados fictícios. Diferença importante de
+  privacidade: no ditado desta página, o áudio é processado pelo serviço de voz do
+  navegador; no aplicativo para Mac, a transcrição acontece inteiramente na máquina.
+</footer>
+
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+
+/* ------------------------------ dados mock ------------------------------ */
+const EXEMPLOS = {
+"Maria, 58 — retorno de hipertensão": `Então Dona Maria, como a senhora passou desde a última consulta? Doutor, eu tomei o losartana todo dia como o senhor falou, cinquenta miligramas de manhã. A pressão em casa deu treze por oito na maioria dos dias. Só tive dor de cabeça uns dois dias, depois passou. Continuo caminhando três vezes por semana. Tomei também a sinvastatina à noite. Não tive inchaço nas pernas. A senhora está fumando? Não doutor, parei há dois anos. Deixa eu medir aqui: pressão hoje doze por oito, frequência setenta e dois, peso setenta e um quilos. Coração e pulmão sem alteração na ausculta. Vamos manter a losartana na mesma dose e a sinvastatina, e repetir os exames de sangue: colesterol, creatinina e potássio. Retorno em três meses com os exames.`,
+"João, 34 — dor lombar": `Doutor, faz uma semana que estou com dor nas costas, embaixo, do lado direito. Começou depois que carreguei umas caixas na mudança. A dor piora quando fico muito tempo sentado e melhora quando deito. Não desce pra perna, não tem formigamento. Tomei ibuprofeno por conta própria, seiscentos miligramas, melhorou um pouco. Não teve febre? Não. Perda de força? Não. Exame: dor à palpação da musculatura paravertebral lombar direita, Lasègue negativo, força e reflexos preservados. É um quadro de lombalgia mecânica aguda, sem sinal de alarme. Vou prescrever analgésico e relaxante muscular por cinco dias, calor local e manter atividade leve, evitar repouso absoluto. Se aparecer dor descendo pra perna, febre ou perda de força, volta antes. Senão, retorno em duas semanas se não melhorar.`,
+"Ana, 7 — febre e dor de ouvido": `A Ana está com febre desde ontem à noite, chegou a trinta e oito e meio, e reclama do ouvido direito. Deram dipirona? Demos, baixa a febre mas volta. Ela teve resfriado semana passada, coriza e tosse. Está comendo menos mas bebendo líquido normal. Vacinas em dia. Alergia a remédio? Nenhuma que a gente saiba. Ao exame: bom estado geral, hidratada, temperatura trinta e sete e nove agora. Otoscopia direita com membrana timpânica hiperemiada e abaulada; esquerda normal. Garganta discretamente hiperemiada, pulmões limpos. É uma otite média aguda à direita. Vou prescrever amoxicilina por dez dias, manter dipirona se febre ou dor. Se piorar, febre alta persistente ou sonolência, procurar atendimento. Reavaliação em quarenta e oito a setenta e duas horas se não melhorar.`
+};
+const sel = $("exemplo");
+for (const nome of Object.keys(EXEMPLOS)) {
+  const opcao = document.createElement("option");
+  opcao.value = nome; opcao.textContent = nome;
+  sel.appendChild(opcao);
+}
+sel.onchange = () => {
+  if (!sel.value) return;
+  $("transcricao").value = EXEMPLOS[sel.value];
+  $("nome").value = sel.value.split(",")[0];
+  $("stGravacao").textContent = "Exemplo carregado (dados fictícios).";
+};
+
+/* ------------------------- ditado (Web Speech API) ----------------------- */
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+let rec = null, gravando = false, t0 = 0, timer = null;
+if (!SR) { $("btnGravar").disabled = true; $("semVoz").hidden = false; }
+
+function pararGravacao() {
+  gravando = false;
+  clearInterval(timer);
+  if (rec) try { rec.stop(); } catch (e) {}
+  $("btnGravar").textContent = "● Ditar consulta";
+  $("btnGravar").classList.remove("ativo");
+  $("interim").textContent = "";
+  $("stGravacao").textContent = "Ditado encerrado. Revise a transcrição.";
+}
+
+$("btnGravar").onclick = () => {
+  if (gravando) { pararGravacao(); return; }
+  rec = new SR();
+  rec.lang = "pt-BR"; rec.continuous = true; rec.interimResults = true;
+  rec.onresult = ev => {
+    let parcial = "";
+    for (let i = ev.resultIndex; i < ev.results.length; i++) {
+      const r = ev.results[i];
+      if (r.isFinal) {
+        const area = $("transcricao");
+        const fim = area.value && !/\s$/.test(area.value) ? " " : "";
+        area.value += fim + r[0].transcript.trim();
+      } else parcial += r[0].transcript;
+    }
+    $("interim").textContent = parcial;
+  };
+  rec.onerror = ev => {
+    if (ev.error === "not-allowed" || ev.error === "service-not-allowed") {
+      pararGravacao();
+      $("stGravacao").textContent = "Permita o microfone para ditar (ícone na barra de endereço).";
+    }
+  };
+  // o reconhecimento contínuo cai sozinho em pausas longas; religar mantém o ditado
+  rec.onend = () => { if (gravando) try { rec.start(); } catch (e) {} };
+  try { rec.start(); } catch (e) { $("stGravacao").textContent = "Não foi possível iniciar o ditado."; return; }
+  gravando = true; t0 = Date.now();
+  $("btnGravar").textContent = "■ Parar (00:00)";
+  $("btnGravar").classList.add("ativo");
+  $("stGravacao").textContent = "Ouvindo… fale normalmente.";
+  timer = setInterval(() => {
+    const s = Math.floor((Date.now() - t0) / 1000);
+    $("btnGravar").textContent =
+      `■ Parar (${String(Math.floor(s/60)).padStart(2,"0")}:${String(s%60).padStart(2,"0")})`;
+  }, 500);
+};
+
+/* ------------------------------ prontuário ------------------------------ */
+const SISTEMA = `Você redige prontuários médicos em português do Brasil a partir da transcrição automática de uma consulta.
+
+Regras:
+- Use exclusivamente informações presentes na transcrição. Nunca invente dados, valores de exames, doses, nomes de medicamentos ou diagnósticos.
+- Quando uma informação esperada não aparecer na transcrição, escreva [não registrado].
+- A transcrição é automática e pode conter erros de reconhecimento de fala; interprete termos claramente distorcidos pelo contexto clínico e, quando a dúvida for relevante, registre a forma ouvida entre aspas seguida de (?).
+- Linguagem técnica, objetiva, em terceira pessoa.
+- Não inclua nome do paciente nem data — o aplicativo adiciona o cabeçalho.
+- Responda em texto simples, sem markdown, com os títulos de seção em maiúsculas, nesta ordem:
+
+QUEIXA PRINCIPAL
+HISTÓRIA DA DOENÇA ATUAL
+ANTECEDENTES PESSOAIS E FAMILIARES
+MEDICAMENTOS EM USO
+ALERGIAS
+EXAME FÍSICO
+HIPÓTESES DIAGNÓSTICAS
+CONDUTA E PRESCRIÇÃO
+ORIENTAÇÕES E RETORNO`;
+
+const chaveSalva = localStorage.getItem("mainemed_chave");
+if (chaveSalva) { $("chave").value = chaveSalva; $("lembrar").checked = true; }
+function atualizaModo() {
+  const real = $("chave").value.trim().length > 0;
+  const selo = $("modoSelo");
+  selo.textContent = real ? "modo real (IA)" : "demonstração";
+  selo.classList.toggle("real", real);
+}
+$("chave").oninput = atualizaModo; atualizaModo();
+
+function cabecalho() {
+  const nome = $("nome").value.trim() || "Paciente";
+  const agora = new Date();
+  const dd = String(agora.getDate()).padStart(2, "0");
+  const mm = String(agora.getMonth() + 1).padStart(2, "0");
+  const hh = String(agora.getHours()).padStart(2, "0");
+  const mi = String(agora.getMinutes()).padStart(2, "0");
+  return `PACIENTE: ${nome}\nDATA: ${dd}/${mm}/${agora.getFullYear()} ${hh}:${mi}\n\n`;
+}
+
+function gerarDemo(transcricao) {
+  const resumo = transcricao.replace(/\s+/g, " ").trim();
+  const corte = resumo.length > 600 ? resumo.slice(0, 600) + "…" : resumo;
+  return `═════ DEMONSTRAÇÃO — GERADO LOCALMENTE, SEM IA ═════
+(Informe uma chave de API em Configurações para um prontuário real.)
+
+QUEIXA PRINCIPAL
+[demonstração]
+
+HISTÓRIA DA DOENÇA ATUAL
+Registro bruto da consulta: "${corte}"
+
+ANTECEDENTES PESSOAIS E FAMILIARES
+[não registrado]
+
+MEDICAMENTOS EM USO
+[não registrado]
+
+ALERGIAS
+[não registrado]
+
+EXAME FÍSICO
+[não registrado]
+
+HIPÓTESES DIAGNÓSTICAS
+[demonstração]
+
+CONDUTA E PRESCRIÇÃO
+[demonstração]
+
+ORIENTAÇÕES E RETORNO
+[demonstração]`;
+}
+
+async function gerarReal(chave, modelo, transcricao) {
+  // Chamada direta do navegador (CORS liberado pelo cabeçalho abaixo);
+  // página estática sem build não comporta o SDK npm.
+  const corpo = {
+    model: modelo,
+    max_tokens: 16000,
+    system: SISTEMA,
+    messages: [{ role: "user", content: "Transcrição da consulta:\n\n" + transcricao }]
+  };
+  const base = {
+    "content-type": "application/json",
+    "x-api-key": chave,
+    "anthropic-version": "2023-06-01",
+    "anthropic-dangerous-direct-browser-access": "true"
+  };
+  let resp = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: { ...base, "anthropic-beta": "server-side-fallback-2026-07-01" },
+    body: JSON.stringify({ ...corpo, fallbacks: "default" })
+  });
+  if (resp.status === 400) {
+    // conta sem o beta de fallback: repete a chamada simples
+    resp = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST", headers: base, body: JSON.stringify(corpo)
+    });
+  }
+  if (!resp.ok) {
+    let msg = `erro ${resp.status}`;
+    try { msg = (await resp.json()).error?.message || msg; } catch (e) {}
+    if (resp.status === 401) throw new Error("Chave inválida ou revogada. Confira em Configurações.");
+    if (resp.status === 429) throw new Error("Muitas solicitações agora. Aguarde um minuto e tente de novo.");
+    throw new Error("Falha na geração: " + msg);
+  }
+  const dados = await resp.json();
+  if (dados.stop_reason === "refusal")
+    throw new Error("O serviço recusou gerar este texto. Revise a transcrição.");
+  const texto = (dados.content || [])
+    .filter(b => b.type === "text").map(b => b.text).join("").trim();
+  if (!texto) throw new Error("Resposta vazia do serviço. Tente novamente.");
+  return texto + (dados.stop_reason === "max_tokens"
+    ? "\n\n[Atenção: o texto pode ter sido cortado.]" : "");
+}
+
+$("btnGerar").onclick = async () => {
+  const transcricao = $("transcricao").value.trim();
+  if (!transcricao) { $("stGerar").textContent = "Dite, cole ou carregue um exemplo primeiro."; return; }
+  const chave = $("chave").value.trim();
+  if ($("lembrar").checked && chave) localStorage.setItem("mainemed_chave", chave);
+  if (!$("lembrar").checked) localStorage.removeItem("mainemed_chave");
+  const btn = $("btnGerar");
+  btn.disabled = true;
+  try {
+    let corpoTexto;
+    if (chave) {
+      $("stGerar").textContent = "Gerando com IA… (alguns segundos)";
+      corpoTexto = await gerarReal(chave, $("modelo").value, transcricao);
+    } else {
+      $("stGerar").textContent = "Modo demonstração — gerado localmente.";
+      corpoTexto = gerarDemo(transcricao);
+    }
+    $("saida").value = cabecalho() + corpoTexto;
+    if (chave) $("stGerar").textContent = "Prontuário gerado. Revise antes de usar.";
+  } catch (erro) {
+    $("stGerar").textContent = erro.message;
+  } finally {
+    btn.disabled = false;
+  }
+};
+
+/* ------------------------------- exportar ------------------------------- */
+$("btnCopiar").onclick = async () => {
+  const texto = $("saida").value.trim(); if (!texto) return;
+  try { await navigator.clipboard.writeText(texto); $("stGerar").textContent = "Copiado."; }
+  catch (e) { $("saida").select(); document.execCommand("copy"); $("stGerar").textContent = "Copiado."; }
+};
+$("btnTxt").onclick = () => {
+  const texto = $("saida").value.trim(); if (!texto) return;
+  const nome = ($("nome").value.trim() || "Paciente").replace(/[^\wÀ-ÿ -]/g, "");
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([texto], { type: "text/plain;charset=utf-8" }));
+  a.download = `Prontuario ${nome} ${new Date().toISOString().slice(0,10)}.txt`;
+  a.click(); URL.revokeObjectURL(a.href);
+};
+$("btnPdf").onclick = () => {
+  if (!$("saida").value.trim()) return;
+  const area = $("saida");
+  area.style.height = area.scrollHeight + "px"; // imprime o conteúdo inteiro
+  window.print();
+  area.style.height = "";
+};
+</script>
+</body>
+</html>

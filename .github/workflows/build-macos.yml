@@ -1,0 +1,105 @@
+name: MaineMed macOS
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Versão da release (ex.: v1.0.0)"
+        required: true
+        default: "v1.0.0"
+      publish:
+        description: "Publicar/atualizar a release para download"
+        type: boolean
+        default: true
+  push:
+    branches: ["main"]
+    tags: ["mainemed-v*"]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: mainemed-build
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build .app (Apple Silicon)
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt "pyinstaller>=6.10"
+
+      - name: Smoke-test imports
+        run: |
+          python -c "import numpy, sounddevice, anthropic, docx, reportlab, tiktoken; print('base ok')"
+          python -c "import mlx.core, mlx_whisper; print('mlx ok')"
+
+      - name: Resolve version
+        id: ver
+        run: |
+          RAW="${{ github.event.inputs.version }}"
+          if [ -z "$RAW" ]; then
+            case "$GITHUB_REF" in
+              refs/tags/*) RAW="${GITHUB_REF#refs/tags/}" ;;
+              *) RAW="v$(sed -n 's/__version__ = "\(.*\)"/\1/p' src/mainemed/__init__.py)" ;;
+            esac
+          fi
+          TAG="$RAW"
+          case "$TAG" in
+            mainemed-*) ;;
+            v*) TAG="mainemed-$TAG" ;;
+            *) TAG="mainemed-v$TAG" ;;
+          esac
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "num=${TAG#mainemed-v}" >> "$GITHUB_OUTPUT"
+
+      - name: Build with PyInstaller
+        env:
+          APP_VERSION: ${{ steps.ver.outputs.num }}
+        run: pyinstaller --noconfirm --clean MaineMed.spec
+
+      - name: Ad-hoc sign
+        run: |
+          codesign --force --deep --sign - dist/MaineMed.app
+          codesign --verify --deep --strict --verbose=2 dist/MaineMed.app
+
+      - name: Self-check bundled app
+        run: dist/MaineMed.app/Contents/MacOS/MaineMed --selfcheck
+
+      # ditto preserva symlinks e a assinatura; zip comum corromperia o .app
+      - name: Zip app
+        run: ditto -c -k --keepParent dist/MaineMed.app MaineMed-macOS-arm64.zip
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: MaineMed-macOS-arm64
+          path: MaineMed-macOS-arm64.zip
+          if-no-files-found: error
+
+      - name: Publish release
+        if: github.event_name == 'push' || inputs.publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.ver.outputs.tag }}
+        run: |
+          if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" \
+              --target "$GITHUB_SHA" \
+              --title "MaineMed ${TAG#mainemed-}" \
+              --notes "App de documentação clínica para Mac com chip Apple (M1+). Baixe MaineMed-macOS-arm64.zip abaixo. Instruções de instalação: INSTALACAO-MAC.md"
+          fi
+          gh release upload "$TAG" MaineMed-macOS-arm64.zip --clobber --repo "$GITHUB_REPOSITORY"
+          echo "Download: https://github.com/$GITHUB_REPOSITORY/releases/download/$TAG/MaineMed-macOS-arm64.zip"

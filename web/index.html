@@ -51,8 +51,31 @@
   .nota{font-size:12.5px;color:var(--suave);margin-top:6px}
   footer{max-width:980px;margin:0 auto;padding:0 16px 30px;font-size:12.5px;
          color:var(--suave)}
+  .pacientes{display:grid;grid-template-columns:repeat(auto-fill,minmax(215px,1fr));gap:10px}
+  .card{display:flex;gap:10px;align-items:center;border:1px solid var(--borda);
+        border-radius:10px;padding:10px;background:#fff;cursor:pointer;text-align:left;
+        font:inherit}
+  .card:hover{border-color:var(--acento)}
+  .card svg{width:52px;height:52px;border-radius:50%;flex:none}
+  .card b{display:block}
+  .card small{color:var(--suave)}
+  .etiquetas span{display:inline-block;background:#e0f2f1;color:var(--acento-2);
+        border-radius:999px;padding:0 8px;font-size:11px;margin:2px 4px 0 0}
+  dialog{border:1px solid var(--borda);border-radius:12px;max-width:660px;width:92%;
+         padding:0}
+  dialog::backdrop{background:rgba(15,40,50,.45)}
+  .ficha-head{display:flex;gap:14px;align-items:center;background:var(--acento-2);
+        color:#fff;padding:14px 16px;border-radius:11px 11px 0 0}
+  .ficha-head svg{width:64px;height:64px;border-radius:50%}
+  .ficha-head small{opacity:.85;display:block}
+  .ficha-body{padding:12px 16px;max-height:58vh;overflow:auto}
+  .ficha-body h3{margin:12px 0 3px;font-size:12.5px;color:var(--acento-2);
+        text-transform:uppercase;letter-spacing:.4px}
+  .ficha-body p{margin:2px 0;font-size:14px}
+  .ficha-foot{display:flex;gap:8px;justify-content:flex-end;padding:12px 16px;
+        border-top:1px solid var(--borda)}
   @media print{
-    header,.aviso,#entrada,#config,.botoes,.status,footer,#modoSelo{display:none!important}
+    header,.aviso,#entrada,#pacientes,#config,.botoes,.status,footer,#modoSelo,dialog{display:none!important}
     body{background:#fff}
     section{border:0;padding:0;margin:0}
     textarea#saida{border:0;min-height:0;height:auto;font-size:13px}
@@ -73,13 +96,27 @@
     versão completa, com transcrição 100% local.
   </div>
 
+  <section id="pacientes">
+    <h2>Pacientes de demonstração <span class="modo">dados fictícios</span></h2>
+    <p class="nota" style="margin:0 0 10px">Toque numa paciente para abrir a ficha
+      gineco-obstétrica completa e carregar a consulta de exemplo dela.</p>
+    <div class="pacientes" id="listaPacientes"></div>
+  </section>
+
+  <dialog id="fichaDlg">
+    <div class="ficha-head" id="fichaHead"></div>
+    <div class="ficha-body" id="fichaBody"></div>
+    <div class="ficha-foot">
+      <button id="btnFecharFicha">Fechar</button>
+      <button class="principal" id="btnUsarFicha">Usar na consulta</button>
+    </div>
+  </dialog>
+
   <section id="entrada">
     <h2>1 · Consulta</h2>
     <div class="linha">
       <div><label for="nome">Paciente</label>
-        <input type="text" id="nome" placeholder="Nome do paciente"></div>
-      <div><label for="exemplo">Ou carregue uma consulta de exemplo (dados fictícios)</label>
-        <select id="exemplo"><option value="">— escolher exemplo —</option></select></div>
+        <input type="text" id="nome" placeholder="Nome da paciente"></div>
     </div>
     <div class="botoes">
       <button id="btnGravar" class="gravar">● Ditar consulta</button>
@@ -137,23 +174,120 @@
 "use strict";
 const $ = id => document.getElementById(id);
 
-/* ------------------------------ dados mock ------------------------------ */
-const EXEMPLOS = {
-"Maria, 58 — retorno de hipertensão": `Então Dona Maria, como a senhora passou desde a última consulta? Doutor, eu tomei o losartana todo dia como o senhor falou, cinquenta miligramas de manhã. A pressão em casa deu treze por oito na maioria dos dias. Só tive dor de cabeça uns dois dias, depois passou. Continuo caminhando três vezes por semana. Tomei também a sinvastatina à noite. Não tive inchaço nas pernas. A senhora está fumando? Não doutor, parei há dois anos. Deixa eu medir aqui: pressão hoje doze por oito, frequência setenta e dois, peso setenta e um quilos. Coração e pulmão sem alteração na ausculta. Vamos manter a losartana na mesma dose e a sinvastatina, e repetir os exames de sangue: colesterol, creatinina e potássio. Retorno em três meses com os exames.`,
-"João, 34 — dor lombar": `Doutor, faz uma semana que estou com dor nas costas, embaixo, do lado direito. Começou depois que carreguei umas caixas na mudança. A dor piora quando fico muito tempo sentado e melhora quando deito. Não desce pra perna, não tem formigamento. Tomei ibuprofeno por conta própria, seiscentos miligramas, melhorou um pouco. Não teve febre? Não. Perda de força? Não. Exame: dor à palpação da musculatura paravertebral lombar direita, Lasègue negativo, força e reflexos preservados. É um quadro de lombalgia mecânica aguda, sem sinal de alarme. Vou prescrever analgésico e relaxante muscular por cinco dias, calor local e manter atividade leve, evitar repouso absoluto. Se aparecer dor descendo pra perna, febre ou perda de força, volta antes. Senão, retorno em duas semanas se não melhorar.`,
-"Ana, 7 — febre e dor de ouvido": `A Ana está com febre desde ontem à noite, chegou a trinta e oito e meio, e reclama do ouvido direito. Deram dipirona? Demos, baixa a febre mas volta. Ela teve resfriado semana passada, coriza e tosse. Está comendo menos mas bebendo líquido normal. Vacinas em dia. Alergia a remédio? Nenhuma que a gente saiba. Ao exame: bom estado geral, hidratada, temperatura trinta e sete e nove agora. Otoscopia direita com membrana timpânica hiperemiada e abaulada; esquerda normal. Garganta discretamente hiperemiada, pulmões limpos. É uma otite média aguda à direita. Vou prescrever amoxicilina por dez dias, manter dipirona se febre ou dor. Se piorar, febre alta persistente ou sonolência, procurar atendimento. Reavaliação em quarenta e oito a setenta e duas horas se não melhorar.`
-};
-const sel = $("exemplo");
-for (const nome of Object.keys(EXEMPLOS)) {
-  const opcao = document.createElement("option");
-  opcao.value = nome; opcao.textContent = nome;
-  sel.appendChild(opcao);
+/* ------------------- dados mock (fichas gineco-obstétricas) ------------------- */
+function retrato(fundo, pele, cabelo, tracoCabelo) {
+  return `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="retrato ilustrativo fictício">
+  <circle cx="32" cy="32" r="32" fill="${fundo}"/>
+  <path d="M12 64a20 20 0 0 1 40 0z" fill="#f2f7f8"/>
+  <circle cx="32" cy="27" r="11" fill="${pele}"/>
+  <path d="${tracoCabelo}" fill="${cabelo}"/>
+</svg>`;
 }
-sel.onchange = () => {
-  if (!sel.value) return;
-  $("transcricao").value = EXEMPLOS[sel.value];
-  $("nome").value = sel.value.split(",")[0];
-  $("stGravacao").textContent = "Exemplo carregado (dados fictícios).";
+const PACIENTES = [
+{
+  nome: "Helena Martins", idade: 29, avatar: retrato("#9ad1c8", "#c68863",
+    "M20 26c0-9 5-14 12-14s12 5 12 14v14c0-3-2-4-3-8-6 1-13 1-18 0-1 4-3 5-3 8z"),
+  resumo: "29 anos · Unimed", etiquetas: ["Pré-natal", "IG 24 sem", "G2P1A0"],
+  ficha: {
+    "Identificação": "29 anos (nasc. 12/03/1997) · Casada · Professora · Convênio Unimed · Tel. (48) 9 9xxx-xx31",
+    "Queixa principal": "Consulta de pré-natal de rotina; refere azia e pirose há 2 semanas.",
+    "Antecedentes obstétricos": "G2 P1 A0 — 1 parto vaginal a termo (2019), RN 3.240 g, sem intercorrências.",
+    "Gestação atual": "DUM 10/02/2026 · IG 24 sem (ref. 29/07/2026) · DPP 17/11/2026 · 5ª consulta de pré-natal · Sorologias do 1º e 2º trimestre sem alterações · TOTG 75 g normal · USG morfológica (22 sem): feto único, cefálico, morfologia normal, placenta anterior alta · dTpa agendada · Movimentos fetais presentes.",
+    "Antecedentes ginecológicos": "Menarca aos 12 anos · Ciclos regulares 28/5 antes da gestação · Citologia oncótica (jun/2025): negativa para lesão intraepitelial · Nega IST.",
+    "Antecedentes pessoais": "Anemia leve na 1ª gestação. Nega HAS, DM, tireoidopatia, cirurgias.",
+    "Antecedentes familiares": "Mãe hipertensa. Nega câncer de mama, ovário ou colo na família. Nega diabetes.",
+    "Medicamentos em uso": "Sulfato ferroso 40 mg/dia · Ácido fólico 400 mcg/dia.",
+    "Alergias": "Nega alergias medicamentosas.",
+    "Hábitos": "Nega tabagismo, etilismo e outras substâncias. Caminhada leve 2×/semana.",
+    "Último exame (22/07/2026)": "PA 110×70 mmHg · Peso 68,4 kg (ganho +7,2 kg) · AFU 23 cm · BCF 148 bpm · Edema ausente · Mamas sem alterações."
+  },
+  consulta: `E aí Helena, como você está se sentindo? Tudo bem doutora, o neném mexe bastante, principalmente de noite. A queixa é essa azia que começou faz umas duas semanas, queima aqui no peito depois que eu como, e piora quando eu deito. Está conseguindo dormir? Mais ou menos, durmo com dois travesseiros que melhora. Intestino funcionando? Normal. Sangramento, perda de líquido, dor pra urinar? Nada disso. Contração? Só umas endurecidas rápidas de barriga de vez em quando, sem dor. Certo, isso pode ser Braxton Hicks, normal nessa fase. Vamos ver: pressão onze por sete, peso sessenta e nove e cem, ganho adequado. Altura uterina vinte e quatro centímetros, batendo com a idade gestacional. Batimento do neném cento e quarenta e quatro, ótimo. Pra azia: fracionar as refeições, evitar café, fritura e comer tarde da noite, e vou prescrever um antiácido que pode usar na gravidez, se não melhorar a gente conversa sobre outro remédio. Continua o sulfato ferroso e o ácido fólico. A dTpa você toma na próxima semana como agendado. Exames do terceiro trimestre eu já deixo pedidos: hemograma, glicemia, sorologias de repetição e urocultura. Retorno em quatro semanas, ou antes se tiver sangramento, perda de líquido, dor de cabeça forte com visão embaçada ou diminuição do movimento do neném.`
+},
+{
+  nome: "Regina Souza", idade: 52, avatar: retrato("#c9b6d8", "#8d5a3b",
+    "M21 24c0-8 4-12 11-12s11 4 11 12l-1 6c-1-4-2-5-4-7-4 2-9 2-12 0-2 2-3 3-4 7z"),
+  resumo: "52 anos · Particular", etiquetas: ["Climatério", "Fogachos", "Preventiva atrasada"],
+  ficha: {
+    "Identificação": "52 anos (nasc. 03/08/1973) · Divorciada · Comerciante · Particular · Tel. (48) 9 9xxx-xx87",
+    "Queixa principal": "Ondas de calor intensas há 8 meses, insônia e irritabilidade. Sem menstruar há 14 meses.",
+    "Antecedentes ginecológicos": "Menarca aos 13 anos · Menopausa há ~14 meses (última menstruação mai/2025) · Citologia oncótica: última em 2022 (atrasada) · Mamografia: última em 2023, BI-RADS 1 · Nega IST · Nega sangramento pós-menopausa.",
+    "Antecedentes obstétricos": "G3 P3 A0 — 2 partos vaginais, 1 cesárea (1998, 2001, 2006).",
+    "Antecedentes pessoais": "HAS em tratamento há 6 anos · Sobrepeso (IMC 28) · Nega DM, tromboembolismo, enxaqueca com aura.",
+    "Antecedentes familiares": "Tia materna com câncer de mama aos 68 · Mãe com osteoporose · Pai hipertenso.",
+    "Medicamentos em uso": "Losartana 50 mg 1×/dia.",
+    "Alergias": "Dipirona (rash cutâneo).",
+    "Hábitos": "Ex-tabagista (parou há 10 anos, carga 10 maços-ano) · Álcool social · Sedentária.",
+    "Último exame (10/07/2026)": "PA 130×85 mmHg · Peso 74 kg · IMC 28,2 · Mamas sem nódulos palpáveis · Abdome sem alterações."
+  },
+  consulta: `Doutora, eu não aguento mais esses calorões. É de repente, sobe um calor do peito pro rosto, eu suo, acordo de madrugada ensopada, umas oito vezes por dia isso acontece. Faz quanto tempo? Uns oito meses, e faz mais de um ano que não menstruo. E o sono e o humor? Péssimos, durmo mal e ando irritada, meu trabalho lida com público e está difícil. Ressecamento vaginal ou dor na relação? Um pouco de ressecamento sim. Sangramento depois que parou de menstruar? Não, nenhum. A senhora tem pressão alta controlada, toma losartana, parou de fumar há dez anos. Já teve trombose? Não. Enxaqueca com aura? Não. Então vamos fazer o seguinte: pelos sintomas intensos e sem contraindicação absoluta, a gente pode discutir terapia hormonal, mas antes quero atualizar seus exames, sua preventiva está atrasada desde dois mil e vinte e dois e a mamografia desde vinte e vinte e três. Hoje já faço a coleta da citologia. Exame das mamas normal hoje. Vou pedir mamografia, ultrassom transvaginal pra ver o endométrio, e laboratório: glicemia, perfil lipídico, TSH. Enquanto isso, medidas gerais: atividade física regular, reduzir cafeína e álcool à noite, quarto fresco. Pro ressecamento, hidratante vaginal. Retorna em trinta dias com os exames pra decidirmos a terapia hormonal com segurança.`
+},
+{
+  nome: "Júlia Ferreira", idade: 22, avatar: retrato("#f2c14e", "#e8b48a",
+    "M22 25c0-8 4-13 10-13s10 5 10 13c3 10 2 16-2 21 2-7 1-11-1-15-5 2-10 2-14 0-2 4-3 8-1 15-4-5-5-11-2-21z"),
+  resumo: "22 anos · Unimed", etiquetas: ["Corrimento", "Prurido", "ACO"],
+  ficha: {
+    "Identificação": "22 anos (nasc. 25/11/2003) · Solteira · Estudante de Direito · Convênio Unimed · Tel. (48) 9 9xxx-xx02",
+    "Queixa principal": "Corrimento branco espesso e coceira vulvar há 5 dias.",
+    "Antecedentes ginecológicos": "Menarca aos 11 anos · Ciclos regulares em uso de ACO (etinilestradiol + levonorgestrel) há 3 anos · Dismenorreia leve · 3º episódio semelhante em 12 meses · Citologia oncótica (fev/2026): negativa · Parceiro fixo há 2 anos · Nega IST.",
+    "Antecedentes obstétricos": "G0 P0 A0.",
+    "Antecedentes pessoais": "Nega HAS, DM, cirurgias. Uso recente de antibiótico para amigdalite (jun/2026).",
+    "Antecedentes familiares": "Avó materna com DM2. Nega câncer ginecológico na família.",
+    "Medicamentos em uso": "ACO combinado, uso contínuo e correto.",
+    "Alergias": "Nega.",
+    "Hábitos": "Nega tabagismo · Álcool social · Academia 3×/semana · Usa roupa de treino por longos períodos.",
+    "Último exame (29/07/2026)": "PA 100×60 mmHg · Peso 58 kg · Vulva hiperemiada com escoriações de coçadura · Especular: conteúdo branco grumoso aderido às paredes, colo epitelizado · pH vaginal 4,2 · Sem dor à mobilização do colo."
+  },
+  consulta: `Doutora, faz uns cinco dias que estou com um corrimento branco, tipo nata de leite, e uma coceira que me incomoda muito, principalmente à noite. Tem cheiro? Não, cheiro não. Arde pra urinar? Um pouco, mais na pele de fora, de tão assada. Teve relação nesse período? Tive, e ardeu também. Você terminou um antibiótico pra garganta faz pouco tempo, né? Sim, faz umas três semanas. Isso conta, antibiótico favorece candidíase. É o terceiro episódio esse ano, certo? É, um em março, um em junho e agora. No exame: a vulva está bem irritada, com marquinhas de coçadura, e no especular tem conteúdo branco grumoso típico, o pH está normal, quatro e dois. Isso fecha bem com candidíase vulvovaginal, e pela repetição a gente já considera de repetição. Vou prescrever fluconazol cento e cinquenta miligramas dose única, repetindo no terceiro dia, e creme de miconazol por sete noites. Pro futuro: evitar ficar com roupa de treino suada por horas, preferir calcinha de algodão, dormir sem calcinha quando der, e não fazer ducha vaginal. O anticoncepcional pode manter. Se completar mais um episódio, a gente faz cultura com identificação da espécie e discute esquema de manutenção por seis meses. Sintomas devem melhorar em três dias; se não melhorar, ou vier corrimento com cheiro ou febre, volta antes. Sua preventiva está em dia, de fevereiro.`
+},
+{
+  nome: "Marta Oliveira", idade: 38, avatar: retrato("#8fb8de", "#6b4326",
+    "M32 11c8 0 12 5 12 12l-2 7c0-4-1-6-3-8-4 2-10 2-14 0-2 2-3 4-3 8l-2-7c0-7 4-12 12-12zm10 4a5 5 0 1 1-1-6 5 5 0 0 1 1 6z"),
+  resumo: "38 anos · Bradesco Saúde", etiquetas: ["SUA", "DIU cobre", "Mioma?"],
+  ficha: {
+    "Identificação": "38 anos (nasc. 07/01/1988) · União estável · Arquiteta · Bradesco Saúde · Tel. (48) 9 9xxx-xx55",
+    "Queixa principal": "Menstruações muito volumosas e com coágulos há 6 meses; cansaço.",
+    "Antecedentes ginecológicos": "Menarca aos 12 anos · Ciclos 26–28 dias, fluxo aumentado (7–8 dias, coágulos, troca a cada 2 h nos primeiros dias) · DIU de cobre há 3 anos · Dispareunia ocasional · Citologia oncótica (nov/2025): negativa · Mamografia ainda não realizada (sem indicação prévia) · Nega IST.",
+    "Antecedentes obstétricos": "G1 P1 A0 — cesárea (2016).",
+    "Antecedentes pessoais": "Nega HAS, DM, coagulopatia conhecida. Cansaço progressivo há 3 meses.",
+    "Antecedentes familiares": "Mãe com miomatose uterina histerectomizada aos 45 · Irmã hígida.",
+    "Medicamentos em uso": "Nega uso contínuo. Ibuprofeno nos dias de fluxo intenso.",
+    "Alergias": "Nega.",
+    "Hábitos": "Nega tabagismo · Álcool social · Pilates 2×/semana.",
+    "Último exame (29/07/2026)": "PA 115×75 mmHg · Peso 66 kg · Mucosas hipocoradas + · Abdome sem massas palpáveis · Especular: fios do DIU visíveis, sem sangramento ativo · Toque: útero aumentado (~10 cm), superfície irregular, indolor · Anexos livres."
+  },
+  consulta: `Doutora, minha menstruação virou um transtorno. Uns seis meses pra cá vem muito forte, com coágulo grande, nos dois primeiros dias eu troco absorvente de duas em duas horas e já manchei roupa trabalhando. E ando muito cansada, subir escada me deixa ofegante. Seu ciclo continua regular? Vem certinho, a cada vinte e seis, vinte e oito dias, mas dura sete, oito dias. Sangra fora do período ou depois da relação? Não. Dor? Cólica mais forte que antes e às vezes dói na relação, mais profundo. Você usa DIU de cobre há três anos, né, ele pode aumentar fluxo, mas essa mudança recente e esse cansaço merecem investigação. Sua mãe teve mioma. No exame de hoje você está descorada, e o útero está aumentado e irregular no toque, o que sugere mioma mesmo. O DIU está tópico, com os fios visíveis. Vou pedir ultrassom transvaginal pra mapear, hemograma com ferritina pra ver anemia, TSH e coagulograma. Enquanto isso, pra reduzir o fluxo, ácido tranexâmico nos dias de sangramento forte e vou receitar sulfato ferroso pelo cansaço com palidez. Dependendo do ultrassom, a gente conversa sobre as opções: trocar pra DIU hormonal, medicação, ou tratar o mioma, inclusive cirurgia se for o caso, levando em conta se você pensa em engravidar de novo. Não penso. Certo. Retorno em três semanas com os exames; se tiver sangramento muito intenso com tontura ou desmaio, procura a emergência.`
+}
+];
+
+const lista = $("listaPacientes");
+const dlg = $("fichaDlg");
+let pacienteAberta = null;
+PACIENTES.forEach((p, i) => {
+  const card = document.createElement("button");
+  card.className = "card";
+  card.innerHTML = `${p.avatar}<span><b>${p.nome}</b><small>${p.resumo}</small>
+    <span class="etiquetas">${p.etiquetas.map(t => `<span>${t}</span>`).join("")}</span></span>`;
+  card.onclick = () => abrirFicha(i);
+  lista.appendChild(card);
+});
+function abrirFicha(i) {
+  const p = PACIENTES[i];
+  pacienteAberta = p;
+  $("fichaHead").innerHTML = `${p.avatar}<div><b>${p.nome}</b>
+    <small>${p.resumo} · retrato ilustrativo — paciente fictícia</small></div>`;
+  $("fichaBody").innerHTML = Object.entries(p.ficha)
+    .map(([titulo, texto]) => `<h3>${titulo}</h3><p>${texto}</p>`).join("");
+  dlg.showModal();
+}
+$("btnFecharFicha").onclick = () => dlg.close();
+$("btnUsarFicha").onclick = () => {
+  if (!pacienteAberta) return;
+  $("nome").value = pacienteAberta.nome;
+  $("transcricao").value = pacienteAberta.consulta;
+  dlg.close();
+  $("stGravacao").textContent =
+    `Ficha de ${pacienteAberta.nome} carregada com a consulta de exemplo (dados fictícios).`;
+  $("entrada").scrollIntoView({ behavior: "smooth" });
 };
 
 /* ------------------------- ditado (Web Speech API) ----------------------- */

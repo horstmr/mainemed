@@ -31,8 +31,9 @@ humano (`transcricao-original`, `transcricao-revisada`, `prontuario-gerado`,
 ## Versão web (MVP de demonstração)
 
 [`web/index.html`](web/index.html) — página estática, arquivo único, sem
-login e sem servidor: ditado pela Web Speech API do navegador, três consultas
-fictícias de exemplo, prontuário em modo demonstração (gerado localmente,
+login e sem servidor: ditado pela Web Speech API do navegador, quatro fichas
+gineco-obstétricas fictícias (com retrato ilustrativo e consulta de exemplo),
+prontuário em modo demonstração (gerado localmente,
 sem IA) e, opcionalmente, geração real via API direto do navegador com uma
 chave informada pelo usuário (recomende chave de um workspace com limite de
 gasto). Para publicar: **Settings → Pages → Deploy from a branch → `main` /

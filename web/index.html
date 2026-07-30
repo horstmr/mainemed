@@ -315,7 +315,7 @@ $("btnUsarFicha").onclick = () => {
 /* ------------------------- ditado (Web Speech API) ----------------------- */
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 let rec = null, gravando = false, t0 = 0, timer = null, aviso = null, recebeuAlgo = false;
-if (!SR) { $("btnGravar").disabled = true; $("semVoz").hidden = false; }
+if (!SR) $("semVoz").hidden = false;
 
 const DICA_TECLADO =
   " Alternativas que sempre funcionam: no celular, toque na caixa de transcrição e use o " +
@@ -407,6 +407,12 @@ function pararGravacao() {
 
 $("btnGravar").onclick = () => {
   if (gravando) { pararGravacao(); return; }
+  if (!SR) {
+    $("stGravacao").textContent =
+      "Este navegador não tem motor de reconhecimento de voz (Firefox não implementa " +
+      "essa parte da Web Speech API). Para ditar, use Chrome, Edge ou Safari." + DICA_TECLADO;
+    return;
+  }
   if (braveDetectado) {
     $("stGravacao").textContent =
       "O Brave remove o serviço de voz do navegador — o ditado não funciona nele. " +

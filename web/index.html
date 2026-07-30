@@ -127,7 +127,12 @@
     <input type="file" id="arqDoc" accept="image/*,application/pdf,.pdf" multiple hidden>
     <input type="file" id="arqOcrLocal" accept="image/*" multiple hidden>
     <p class="nota" id="semVoz" hidden>Este navegador não oferece ditado por voz
-      (use Chrome, Edge ou Safari). Os exemplos e a digitação continuam funcionando.</p>
+      (use Chrome, Edge ou Safari). Os exemplos e a digitação continuam funcionando —
+      e no celular dá para ditar tocando na caixa de transcrição e usando o 🎤 do teclado.</p>
+    <p class="nota">O ditado usa o serviço de voz do navegador e <strong>não depende da
+      chave de API</strong> (a chave serve para gerar o prontuário e para o Importar
+      documento em modo IA). Dica de celular: também dá para ditar com o 🎤 do teclado,
+      tocando na caixa de transcrição.</p>
     <p class="nota">Importar documento lê foto ou PDF de exames, encaminhamentos e fichas
       antigas e coloca o texto na transcrição. No <em>modo IA</em> o arquivo é enviado à
       API para leitura (requer chave); no <em>modo demonstração</em> nada sai do navegador
@@ -303,12 +308,16 @@ $("btnUsarFicha").onclick = () => {
 
 /* ------------------------- ditado (Web Speech API) ----------------------- */
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-let rec = null, gravando = false, t0 = 0, timer = null;
+let rec = null, gravando = false, t0 = 0, timer = null, aviso = null, recebeuAlgo = false;
 if (!SR) { $("btnGravar").disabled = true; $("semVoz").hidden = false; }
+
+const DICA_TECLADO =
+  " Alternativa que sempre funciona no celular: toque na caixa de transcrição e use o 🎤 do teclado.";
 
 function pararGravacao() {
   gravando = false;
   clearInterval(timer);
+  clearTimeout(aviso);
   if (rec) try { rec.stop(); } catch (e) {}
   $("btnGravar").textContent = "● Ditar consulta";
   $("btnGravar").classList.remove("ativo");
@@ -318,9 +327,17 @@ function pararGravacao() {
 
 $("btnGravar").onclick = () => {
   if (gravando) { pararGravacao(); return; }
+  if (!window.isSecureContext) {
+    $("stGravacao").textContent =
+      "O ditado só funciona pela página https (link do Pages), não abrindo o arquivo do disco." + DICA_TECLADO;
+    return;
+  }
   rec = new SR();
   rec.lang = "pt-BR"; rec.continuous = true; rec.interimResults = true;
+  recebeuAlgo = false;
   rec.onresult = ev => {
+    recebeuAlgo = true;
+    clearTimeout(aviso);
     let parcial = "";
     for (let i = ev.resultIndex; i < ev.results.length; i++) {
       const r = ev.results[i];
@@ -333,14 +350,28 @@ $("btnGravar").onclick = () => {
     $("interim").textContent = parcial;
   };
   rec.onerror = ev => {
-    if (ev.error === "not-allowed" || ev.error === "service-not-allowed") {
+    const fatais = {
+      "not-allowed": "O microfone foi bloqueado. Libere no ícone de cadeado/ⓐA da barra de endereço → Microfone → Permitir.",
+      "service-not-allowed": "Este navegador bloqueou o serviço de voz. Tente pelo Chrome ou Edge." + DICA_TECLADO,
+      "audio-capture": "Nenhum microfone disponível — veja se outro aplicativo está usando o microfone.",
+      "network": "O serviço de voz do navegador não respondeu (o ditado precisa de internet)." + DICA_TECLADO,
+      "language-not-supported": "Este navegador não dita em português." + DICA_TECLADO
+    };
+    if (ev.error in fatais) {
       pararGravacao();
-      $("stGravacao").textContent = "Permita o microfone para ditar (ícone na barra de endereço).";
+      $("stGravacao").textContent = fatais[ev.error];
     }
+    // "no-speech"/"aborted" são transitórios: o religamento em onend segue o ditado
   };
   // o reconhecimento contínuo cai sozinho em pausas longas; religar mantém o ditado
   rec.onend = () => { if (gravando) try { rec.start(); } catch (e) {} };
-  try { rec.start(); } catch (e) { $("stGravacao").textContent = "Não foi possível iniciar o ditado."; return; }
+  try { rec.start(); } catch (e) { $("stGravacao").textContent = "Não foi possível iniciar o ditado." + DICA_TECLADO; return; }
+  aviso = setTimeout(() => {
+    if (gravando && !recebeuAlgo)
+      $("stGravacao").textContent =
+        "Estou ouvindo, mas nada chegou ainda — fale mais perto do aparelho. Se continuar vazio, " +
+        "confira a permissão do microfone." + DICA_TECLADO;
+  }, 8000);
   gravando = true; t0 = Date.now();
   $("btnGravar").textContent = "■ Parar (00:00)";
   $("btnGravar").classList.add("ativo");

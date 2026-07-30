@@ -45,6 +45,13 @@
   .medidor{display:inline-block;width:92px;height:10px;border:1px solid var(--borda);
     border-radius:5px;overflow:hidden;vertical-align:middle;background:#fff}
   .medidor i{display:block;height:100%;width:0;background:var(--ok);transition:width .08s}
+  .rec-ativo{background:var(--ok)!important;color:#fff;font-weight:700;
+    animation:pulsar 1.6s ease-out infinite}
+  .wbar{height:12px;border:1px solid var(--borda);border-radius:6px;overflow:hidden;
+    background:#fff;margin-top:4px;max-width:440px}
+  .wbar i{display:block;height:100%;width:2%;background:var(--acento);transition:width .2s}
+  .wbar.indet i{width:30%;animation:desliza 1.2s linear infinite}
+  @keyframes desliza{from{margin-left:-30%}to{margin-left:100%}}
   .botoes{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
   .status{font-size:13px;color:var(--suave);margin-top:8px;min-height:1.2em}
   .interim{color:var(--suave);font-style:italic}
@@ -127,8 +134,13 @@
       <button id="btnGravar" class="gravar">● Ditar consulta</button>
       <button id="btnDoc">📄 Importar documento (IA)</button>
       <button id="btnOcrLocal">🧪 OCR local (experimental)</button>
+      <button id="btnWhisper">🎙️ Transcrever local (Whisper)</button>
       <span id="medidor" class="medidor" hidden><i></i></span>
       <span class="status" id="stGravacao"></span>
+    </div>
+    <div id="wArea" class="nota" hidden>
+      <div id="wTexto"></div>
+      <div class="wbar"><i id="wBarra"></i></div>
     </div>
     <input type="file" id="arqDoc" accept="image/*,application/pdf,.pdf" multiple hidden>
     <input type="file" id="arqOcrLocal" accept="image/*" multiple hidden>
@@ -145,7 +157,10 @@
       (entra um exemplo fictício). Já o <em>OCR local</em> (Tesseract) processa a imagem
       <strong>dentro do navegador</strong> — a foto não sai da máquina e não precisa de
       chave, mas baixa o motor (~15 MB) do CDN na primeira vez, lê só imagens (não PDF) e
-      erra mais que o modo IA.</p>
+      erra mais que o modo IA. E o <em>Transcrever local (Whisper)</em> grava e transcreve
+      a fala <strong>inteiramente no navegador</strong> — funciona até em Brave e Firefox,
+      sem chave, com o áudio sem sair da máquina; baixa o modelo (~80 MB) na primeira vez,
+      com barra de progresso, e é mais lento e menos preciso que o ditado nativo.</p>
     <label for="transcricao" style="display:block;margin-top:12px">Transcrição (editável)</label>
     <textarea id="transcricao" placeholder="O texto ditado aparece aqui — ou digite/cole a transcrição."></textarea>
     <div class="status"><span id="interim" class="interim"></span></div>
@@ -353,20 +368,17 @@ function bip(freqInicio, freqFim, dur = 0.18) {
     osc.start(); osc.stop(audioCtx.currentTime + dur + 0.02);
   } catch (e) {}
 }
-async function ligarMedidor() {
-  // no iPhone/iPad uma segunda captura de áudio pode derrubar o próprio ditado
-  if (/iPhone|iPad|iPod/.test(navigator.userAgent)) return;
+function ligarMedidorComStream(stream) {
   try {
-    medidorStream = await navigator.mediaDevices.getUserMedia({ audio: true });
     audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
-    const fonte = audioCtx.createMediaStreamSource(medidorStream);
+    const fonte = audioCtx.createMediaStreamSource(stream);
     const analisador = audioCtx.createAnalyser();
     analisador.fftSize = 512;
     fonte.connect(analisador);
     const dados = new Uint8Array(analisador.fftSize);
     $("medidor").hidden = false;
     const passo = () => {
-      if (!gravando) return;
+      if (!gravando && !whisperGravando) return;
       analisador.getByteTimeDomainData(dados);
       let pico = 0;
       for (const v of dados) pico = Math.max(pico, Math.abs(v - 128));
@@ -374,6 +386,14 @@ async function ligarMedidor() {
       medidorRaf = requestAnimationFrame(passo);
     };
     passo();
+  } catch (e) {}
+}
+async function ligarMedidor() {
+  // no iPhone/iPad uma segunda captura de áudio pode derrubar o próprio ditado
+  if (/iPhone|iPad|iPod/.test(navigator.userAgent)) return;
+  try {
+    medidorStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    ligarMedidorComStream(medidorStream);
   } catch (e) {
     // Sem medidor, ficam o bip e o botão pulsando — mas acesso negado aqui é
     // sintoma de permissão faltando no APLICATIVO do navegador, não no site.
@@ -819,6 +839,166 @@ $("btnPdf").onclick = () => {
   window.print();
   area.style.height = "";
 };
+
+/* ------------- Whisper local no navegador (transformers.js, experimental) -------------
+   Grava com MediaRecorder e transcreve inteiramente no navegador — funciona até em
+   Brave/Firefox, sem chave, e o áudio não sai da máquina. O modelo (~80 MB) baixa na
+   primeira utilização, com barra de progresso, e fica no cache do navegador. */
+let whisperPipe = null, whisperCarregando = null, whisperGravando = false;
+let wRec = null, wChunks = [], wStream = null, wT0 = 0, wTimer = null;
+const wProgresso = {};
+
+function wMostrar(texto, modo) { // "det" | "indet" | "off"
+  const areaW = $("wArea");
+  if (modo === "off") { areaW.hidden = true; return; }
+  areaW.hidden = false;
+  $("wTexto").textContent = texto;
+  $("wBarra").parentElement.classList.toggle("indet", modo === "indet");
+}
+function wBarraPct(pct) {
+  $("wBarra").style.width = Math.max(2, Math.min(100, pct)) + "%";
+}
+
+function carregarWhisper() {
+  if (whisperPipe) return Promise.resolve(whisperPipe);
+  if (whisperCarregando) return whisperCarregando;
+  whisperCarregando = (async () => {
+    wMostrar("Preparando o transcritor local — na primeira vez baixa o modelo (~80 MB), " +
+      "que fica guardado no navegador. Pode continuar falando enquanto isso…", "det");
+    wBarraPct(2);
+    const { pipeline } = await import("https://cdn.jsdelivr.net/npm/@huggingface/transformers@3");
+    const opcoes = dispositivo => ({
+      dtype: "q8",
+      device: dispositivo,
+      progress_callback: ev => {
+        if (ev.status === "progress" && ev.total) {
+          wProgresso[ev.file] = { loaded: ev.loaded, total: ev.total };
+          let baixado = 0, total = 0;
+          for (const p of Object.values(wProgresso)) { baixado += p.loaded; total += p.total; }
+          if (total > 0) {
+            wBarraPct(baixado / total * 100);
+            $("wTexto").textContent = "Baixando o transcritor local (uma vez só): " +
+              (baixado / 1048576).toFixed(0) + " de " + (total / 1048576).toFixed(0) + " MB…";
+          }
+        } else if (ev.status === "ready") {
+          wMostrar("Transcritor local pronto.", "det");
+          wBarraPct(100);
+        }
+      }
+    });
+    let pipe;
+    try {
+      pipe = await pipeline("automatic-speech-recognition",
+        "onnx-community/whisper-base", opcoes(navigator.gpu ? "webgpu" : "wasm"));
+    } catch (e) {
+      pipe = await pipeline("automatic-speech-recognition",
+        "onnx-community/whisper-base", opcoes("wasm"));
+    }
+    whisperPipe = pipe;
+    return pipe;
+  })();
+  whisperCarregando.catch(() => { whisperCarregando = null; });
+  return whisperCarregando;
+}
+
+async function blobParaFloat32(blob) {
+  const ctx = new (window.AudioContext || window.webkitAudioContext)();
+  try {
+    const audio = await ctx.decodeAudioData(await blob.arrayBuffer());
+    const off = new OfflineAudioContext(1, Math.max(1, Math.ceil(audio.duration * 16000)), 16000);
+    const fonte = off.createBufferSource();
+    fonte.buffer = audio;
+    fonte.connect(off.destination);
+    fonte.start();
+    return (await off.startRendering()).getChannelData(0);
+  } finally { ctx.close(); }
+}
+
+$("btnWhisper").onclick = async () => {
+  if (whisperGravando) { pararWhisper(); return; }
+  if (gravando) {
+    $("stGravacao").textContent = "Pare o ditado antes de usar o transcritor local.";
+    return;
+  }
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  } catch (e) {
+    $("stGravacao").textContent =
+      "Sem acesso ao microfone. Confira a permissão do site e a do aplicativo do " +
+      "navegador no sistema." + DICA_TECLADO;
+    return;
+  }
+  wStream = stream;
+  wChunks = [];
+  const mime = MediaRecorder.isTypeSupported("audio/webm") ? "audio/webm"
+    : (MediaRecorder.isTypeSupported("audio/mp4") ? "audio/mp4" : "");
+  wRec = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);
+  wRec.ondataavailable = ev => { if (ev.data && ev.data.size) wChunks.push(ev.data); };
+  wRec.start(1000);
+  whisperGravando = true;
+  wT0 = Date.now();
+  $("btnWhisper").classList.add("rec-ativo");
+  wTimer = setInterval(() => {
+    const s = Math.floor((Date.now() - wT0) / 1000);
+    $("btnWhisper").textContent =
+      `■ Parar e transcrever (${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")})`;
+  }, 500);
+  ligarMedidorComStream(stream);
+  bip(660, 990);
+  $("stGravacao").textContent = "Gravando para o transcritor local… fale normalmente.";
+  // o download do modelo roda em paralelo com a fala
+  carregarWhisper().catch(e => wMostrar(
+    "Não deu para baixar o transcritor local (precisa de internet na primeira vez): " +
+    (e && e.message || e), "det"));
+};
+
+function pararWhisper() {
+  whisperGravando = false;
+  clearInterval(wTimer);
+  desligarMedidor();
+  bip(880, 440);
+  $("btnWhisper").classList.remove("rec-ativo");
+  $("btnWhisper").textContent = "🎙️ Transcrever local (Whisper)";
+  const gravador = wRec;
+  wRec = null;
+  if (!gravador) return;
+  const terminou = new Promise(res => { gravador.onstop = res; });
+  try { gravador.stop(); } catch (e) {}
+  terminou.then(async () => {
+    if (wStream) { wStream.getTracks().forEach(t => t.stop()); wStream = null; }
+    const blob = new Blob(wChunks, { type: gravador.mimeType || "audio/webm" });
+    wChunks = [];
+    if (blob.size < 2000) { wMostrar("A gravação ficou vazia. Tente de novo.", "det"); return; }
+    const durSeg = Math.max(1, Math.round((Date.now() - wT0) / 1000));
+    try {
+      wMostrar("Preparando o transcritor local…", "indet");
+      const pipe = await carregarWhisper();
+      const audio = await blobParaFloat32(blob);
+      const inicio = Date.now();
+      wMostrar(
+        `Transcrevendo ${Math.floor(durSeg / 60)}min${String(durSeg % 60).padStart(2, "0")}s ` +
+        "de áudio localmente… a página pode ficar lenta durante o processo; " +
+        "a primeira transcrição é a mais demorada.", "indet");
+      const saida = await pipe(audio, {
+        language: "portuguese", task: "transcribe",
+        chunk_length_s: 30, stride_length_s: 5
+      });
+      const texto = ((saida && saida.text) || "").trim();
+      const areaT = $("transcricao");
+      areaT.value += (areaT.value.trim() ? "\n\n" : "") +
+        "[TRANSCRIÇÃO LOCAL (Whisper)]\n" +
+        (texto || "[nada reconhecido — fale mais perto do microfone]");
+      wMostrar(
+        `Transcrição local concluída em ${Math.round((Date.now() - inicio) / 1000)}s. ` +
+        "Experimental: revise o texto antes de gerar o prontuário.", "det");
+      wBarraPct(100);
+      setTimeout(() => wMostrar("", "off"), 8000);
+    } catch (e) {
+      wMostrar("Falha no transcritor local: " + (e && e.message || e), "det");
+    }
+  });
+}
 </script>
 </body>
 </html>

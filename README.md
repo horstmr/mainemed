@@ -31,18 +31,32 @@ humano (`transcricao-original`, `transcricao-revisada`, `prontuario-gerado`,
 ## Versão web (MVP de demonstração)
 
 [`web/index.html`](web/index.html) — página estática, arquivo único, sem
-login e sem servidor: ditado pela Web Speech API do navegador, quatro fichas
-gineco-obstétricas fictícias (com retrato ilustrativo e consulta de exemplo),
-prontuário em modo demonstração (gerado localmente,
-sem IA) e, opcionalmente, geração real via API direto do navegador com uma
-chave informada pelo usuário (recomende chave de um workspace com limite de
-gasto). Para publicar: **Settings → Pages → Deploy from a branch → `main` /
-(root)** — a página fica em `https://horstmr.github.io/mainemed/web/`.
-Alternativa: baixar o arquivo e abrir localmente (o modo demonstração
-funciona offline).
+login e sem servidor:
 
-Diferença de privacidade honesta: o ditado da versão web passa pelo serviço
-de voz do navegador; a transcrição 100% local é exclusividade do app de Mac.
+- **Ditado** pela Web Speech API (Chrome/Edge/Safari), com bip de início/fim e
+  medidor de nível; a página detecta Brave (remove o serviço de voz) e Firefox
+  (não o implementa) e explica as alternativas (Windows+H, 🎤 do teclado);
+- **Transcrição local experimental (Whisper)**: grava com MediaRecorder e
+  transcreve no próprio navegador via transformers.js (`whisper-base`
+  quantizado, WebGPU com fallback WASM) — funciona até em Brave/Firefox, sem
+  chave e sem o áudio sair da máquina; o modelo (~80 MB) baixa na primeira
+  utilização, com barra de progresso, e fica no cache;
+- **Quatro fichas gineco-obstétricas fictícias** (retrato ilustrativo, ficha
+  completa e consulta de exemplo);
+- **Prontuário** em modo demonstração (local, sem IA) ou real via API direto
+  do navegador com chave do usuário (recomende chave de workspace com limite
+  de gasto);
+- **Importação de documentos**: modo IA (foto/PDF via API) e OCR local
+  experimental (Tesseract, ~15 MB sob demanda, imagem não sai do navegador).
+
+Para publicar: **Settings → Pages → Deploy from a branch → `main` / (root)**
+— a página fica em `https://horstmr.github.io/mainemed/web/`. Alternativa:
+baixar o arquivo e abrir localmente (o modo demonstração funciona offline;
+os modos com download de motor via CDN precisam de internet).
+
+Diferença de privacidade honesta: o ditado nativo passa pelo serviço de voz
+do navegador; o Whisper local do navegador e o do app de Mac processam tudo
+na máquina.
 
 ## Desenvolvimento (em um Mac com chip M)
 

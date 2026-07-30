@@ -318,7 +318,24 @@ let rec = null, gravando = false, t0 = 0, timer = null, aviso = null, recebeuAlg
 if (!SR) { $("btnGravar").disabled = true; $("semVoz").hidden = false; }
 
 const DICA_TECLADO =
-  " Alternativa que sempre funciona no celular: toque na caixa de transcrição e use o 🎤 do teclado.";
+  " Alternativas que sempre funcionam: no celular, toque na caixa de transcrição e use o " +
+  "🎤 do teclado; no Windows, a tecla Windows+H dita em qualquer caixa de texto.";
+
+// O Brave remove o serviço de voz do Chromium (decisão de privacidade): o botão
+// de ditar nunca funcionaria nele — melhor avisar na hora do que falhar calado.
+let braveDetectado = false;
+(async () => {
+  try { braveDetectado = !!(navigator.brave && await navigator.brave.isBrave()); }
+  catch (e) { braveDetectado = false; }
+  if (braveDetectado) {
+    const nota = $("semVoz");
+    nota.hidden = false;
+    nota.textContent =
+      "Você está no Brave: ele remove o serviço de voz do navegador, então o botão " +
+      "Ditar não funciona aqui (em nenhum site). Para ditar, use Chrome ou Edge — ou a " +
+      "tecla Windows+H na caixa de transcrição. Todo o resto da página funciona normalmente.";
+  }
+})();
 
 // ---- feedback sonoro e medidor de nível ("o navegador está ouvindo") ----
 let audioCtx = null, medidorStream = null, medidorRaf = null;
@@ -390,6 +407,12 @@ function pararGravacao() {
 
 $("btnGravar").onclick = () => {
   if (gravando) { pararGravacao(); return; }
+  if (braveDetectado) {
+    $("stGravacao").textContent =
+      "O Brave remove o serviço de voz do navegador — o ditado não funciona nele. " +
+      "Abra esta página no Chrome/Edge, ou dite com Windows+H na caixa de transcrição.";
+    return;
+  }
   if (!window.isSecureContext) {
     $("stGravacao").textContent =
       "O ditado só funciona pela página https (link do Pages), não abrindo o arquivo do disco." + DICA_TECLADO;

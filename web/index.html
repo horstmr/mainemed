@@ -39,7 +39,12 @@
   button.principal{background:var(--acento);color:#fff;font-weight:700}
   button.gravar{background:var(--alerta);color:#fff;font-weight:700;font-size:16px;
                 padding:12px 22px}
-  button.gravar.ativo{background:var(--ok)}
+  button.gravar.ativo{background:var(--ok);animation:pulsar 1.6s ease-out infinite}
+  @keyframes pulsar{0%{box-shadow:0 0 0 0 rgba(27,94,32,.45)}
+    70%{box-shadow:0 0 0 14px rgba(27,94,32,0)}100%{box-shadow:0 0 0 0 rgba(27,94,32,0)}}
+  .medidor{display:inline-block;width:92px;height:10px;border:1px solid var(--borda);
+    border-radius:5px;overflow:hidden;vertical-align:middle;background:#fff}
+  .medidor i{display:block;height:100%;width:0;background:var(--ok);transition:width .08s}
   .botoes{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
   .status{font-size:13px;color:var(--suave);margin-top:8px;min-height:1.2em}
   .interim{color:var(--suave);font-style:italic}
@@ -122,6 +127,7 @@
       <button id="btnGravar" class="gravar">● Ditar consulta</button>
       <button id="btnDoc">📄 Importar documento (IA)</button>
       <button id="btnOcrLocal">🧪 OCR local (experimental)</button>
+      <span id="medidor" class="medidor" hidden><i></i></span>
       <span class="status" id="stGravacao"></span>
     </div>
     <input type="file" id="arqDoc" accept="image/*,application/pdf,.pdf" multiple hidden>
@@ -314,10 +320,59 @@ if (!SR) { $("btnGravar").disabled = true; $("semVoz").hidden = false; }
 const DICA_TECLADO =
   " Alternativa que sempre funciona no celular: toque na caixa de transcrição e use o 🎤 do teclado.";
 
+// ---- feedback sonoro e medidor de nível ("o navegador está ouvindo") ----
+let audioCtx = null, medidorStream = null, medidorRaf = null;
+function bip(freqInicio, freqFim, dur = 0.18) {
+  try {
+    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === "suspended") audioCtx.resume();
+    const osc = audioCtx.createOscillator(), gan = audioCtx.createGain();
+    osc.frequency.setValueAtTime(freqInicio, audioCtx.currentTime);
+    osc.frequency.linearRampToValueAtTime(freqFim, audioCtx.currentTime + dur);
+    gan.gain.setValueAtTime(0.001, audioCtx.currentTime);
+    gan.gain.exponentialRampToValueAtTime(0.12, audioCtx.currentTime + 0.02);
+    gan.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + dur);
+    osc.connect(gan).connect(audioCtx.destination);
+    osc.start(); osc.stop(audioCtx.currentTime + dur + 0.02);
+  } catch (e) {}
+}
+async function ligarMedidor() {
+  // no iPhone/iPad uma segunda captura de áudio pode derrubar o próprio ditado
+  if (/iPhone|iPad|iPod/.test(navigator.userAgent)) return;
+  try {
+    medidorStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    const fonte = audioCtx.createMediaStreamSource(medidorStream);
+    const analisador = audioCtx.createAnalyser();
+    analisador.fftSize = 512;
+    fonte.connect(analisador);
+    const dados = new Uint8Array(analisador.fftSize);
+    $("medidor").hidden = false;
+    const passo = () => {
+      if (!gravando) return;
+      analisador.getByteTimeDomainData(dados);
+      let pico = 0;
+      for (const v of dados) pico = Math.max(pico, Math.abs(v - 128));
+      $("medidor").firstElementChild.style.width = Math.min(100, Math.round(pico * 1.6)) + "%";
+      medidorRaf = requestAnimationFrame(passo);
+    };
+    passo();
+  } catch (e) {} // sem medidor, ficam o bip e o botão pulsando
+}
+function desligarMedidor() {
+  cancelAnimationFrame(medidorRaf);
+  if (medidorStream) { medidorStream.getTracks().forEach(t => t.stop()); medidorStream = null; }
+  const medidor = $("medidor");
+  medidor.hidden = true;
+  medidor.firstElementChild.style.width = "0";
+}
+
 function pararGravacao() {
   gravando = false;
   clearInterval(timer);
   clearTimeout(aviso);
+  desligarMedidor();
+  bip(880, 440);
   if (rec) try { rec.stop(); } catch (e) {}
   $("btnGravar").textContent = "● Ditar consulta";
   $("btnGravar").classList.remove("ativo");
@@ -376,6 +431,8 @@ $("btnGravar").onclick = () => {
   $("btnGravar").textContent = "■ Parar (00:00)";
   $("btnGravar").classList.add("ativo");
   $("stGravacao").textContent = "Ouvindo… fale normalmente.";
+  bip(660, 990);
+  ligarMedidor();
   timer = setInterval(() => {
     const s = Math.floor((Date.now() - t0) / 1000);
     $("btnGravar").textContent =

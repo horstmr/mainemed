@@ -357,7 +357,15 @@ async function ligarMedidor() {
       medidorRaf = requestAnimationFrame(passo);
     };
     passo();
-  } catch (e) {} // sem medidor, ficam o bip e o botão pulsando
+  } catch (e) {
+    // Sem medidor, ficam o bip e o botão pulsando — mas acesso negado aqui é
+    // sintoma de permissão faltando no APLICATIVO do navegador, não no site.
+    if (e && (e.name === "NotAllowedError" || e.name === "SecurityError"))
+      $("stGravacao").textContent =
+        "O navegador está sem acesso ao microfone. Além da permissão do site, confira a " +
+        "permissão do aplicativo do navegador no telefone: Ajustes → Apps → seu navegador " +
+        "→ Microfone → Permitir." + DICA_TECLADO;
+  }
 }
 function desligarMedidor() {
   cancelAnimationFrame(medidorRaf);
@@ -415,11 +423,32 @@ $("btnGravar").onclick = () => {
     if (ev.error in fatais) {
       pararGravacao();
       $("stGravacao").textContent = fatais[ev.error];
+    } else if (ev.error !== "no-speech" && ev.error !== "aborted") {
+      $("stGravacao").textContent = `Serviço de voz: erro "${ev.error}" — tentando continuar…`;
     }
     // "no-speech"/"aborted" são transitórios: o religamento em onend segue o ditado
   };
-  // o reconhecimento contínuo cai sozinho em pausas longas; religar mantém o ditado
-  rec.onend = () => { if (gravando) try { rec.start(); } catch (e) {} };
+  rec.onstart = () => {
+    if (!recebeuAlgo) $("stGravacao").textContent = "Ouvindo… serviço de voz conectado, fale normalmente.";
+  };
+  // o reconhecimento contínuo cai sozinho em pausas longas; religar mantém o ditado.
+  // Se religar várias vezes sem nunca devolver texto, o serviço de voz não está
+  // funcionando neste navegador/rede — parar e dizer isso claramente.
+  let reinicios = 0;
+  rec.onend = () => {
+    if (!gravando) return;
+    reinicios += 1;
+    if (reinicios >= 4 && !recebeuAlgo) {
+      pararGravacao();
+      $("stGravacao").textContent =
+        "Diagnóstico: o serviço de voz conecta mas não devolve texto neste navegador/rede — " +
+        "não é problema da página nem da chave. Confira a permissão de microfone do " +
+        "APLICATIVO do navegador nos ajustes do telefone, tente Chrome/Edge ou outra rede." +
+        DICA_TECLADO;
+      return;
+    }
+    try { rec.start(); } catch (e) {}
+  };
   try { rec.start(); } catch (e) { $("stGravacao").textContent = "Não foi possível iniciar o ditado." + DICA_TECLADO; return; }
   aviso = setTimeout(() => {
     if (gravando && !recebeuAlgo)
